@@ -352,23 +352,95 @@ docker run --rm -v $(pwd)/samples:/samples resume-cli:latest \
 
 ```
 AIParseCliDemo/
-├── pom.xml
-├── README.md
-├── Dockerfile
-├── Makefile
-├── samples/                          # 示例简历与 JD
+├── pom.xml                            # Maven 配置：依赖、shade 插件、JDK 21 编译目标
+├── README.md                          # 本文档
+├── prd.md                             # 产品需求说明
+├── Dockerfile                         # 容器化构建（基于 Eclipse Temurin JRE 21）
+├── Makefile                           # 常用命令封装（build / test / run-parse / clean）
+│
+├── .gitignore                         # 忽略 target/、.env、IDE 文件等
+├── .env                               # 本地环境变量（不入库，示例见 .env.example）
+│
+├── resume-cli                         # POSIX 启动脚本（Linux / macOS / Git Bash）
+├── resume-cli.cmd                     # Windows 启动脚本（cmd 入口，转调 .ps1）
+├── resume-cli.ps1                     # Windows 启动脚本（PowerShell 真正干活，自动找 JDK 17+）
+│
+├── samples/                           # 示例输入，方便快速试跑
+│   ├── resume.pdf                     # 中文样例简历（用 PDFBox + SimHei 字体生成）
+│   └── jd.txt                         # "高级全栈工程师" JD 文本，给 score 命令用
+│
 └── src/
     ├── main/
     │   ├── java/com/aiparse/cli/
-    │   │   ├── Main.java
-    │   │   ├── command/              # parse / extract / score
-    │   │   ├── exception/
-    │   │   ├── model/                # Resume / Education / ScoreResult
-    │   │   ├── service/              # Pdf / Ai / JsonExtractor / Mock / Prompts
-    │   │   └── util/                 # OutputWriter
-    │   └── resources/logback.xml
+    │   │   │
+    │   │   ├── Main.java              # 入口：picocli 装配、异常处理、--help
+    │   │   │
+    │   │   ├── command/               # 三条主命令 + 共享基类
+    │   │   │   ├── BaseCommand.java   # 抽象基类：解析 --api-key/--base-url/--model/.env，
+    │   │   │   │                      # 提供 resolveApiKey/BaseUrl/Model 与 AiService 工厂
+    │   │   │   ├── ParseCommand.java  # parse  子命令：只解析 PDF 文本，不调 AI
+    │   │   │   ├── ExtractCommand.java# extract 子命令：PDF → 文本 → AI → 结构化 Resume
+    │   │   │   └── ScoreCommand.java  # score  子命令：PDF + JD → AI → 评分 + 面试题
+    │   │   │
+    │   │   ├── config/                # 配置层
+    │   │   │   └── EnvConfig.java     # 极简 .env 解析器：注释、export 前缀、引号、行内注释
+    │   │   │
+    │   │   ├── exception/             # 自定义异常
+    │   │   │   └── CliException.java  # 带 exitCode 的业务异常，Main 统一转成退出码
+    │   │   │
+    │   │   ├── model/                 # 数据模型（POJO，被 Jackson 序列化）
+    │   │   │   ├── Resume.java        # 简历顶层结构（name/phone/email/education/skills…）
+    │   │   │   ├── Education.java     # 单条教育经历
+    │   │   │   └── ScoreResult.java   # 评分结果（overall/skill/exp/edu 分项 + 评语 + 面试题）
+    │   │   │
+    │   │   ├── service/               # 业务逻辑层
+    │   │   │   ├── PdfService.java    # PDFBox 封装：读文件、校验 magic、抽文本、错误分类
+    │   │   │   ├── AiService.java     # Qwen 真实调用（HttpClient，OpenAI 兼容协议）
+    │   │   │   ├── MockAiService.java # 离线 mock：基于关键词的启发式抽取/评分
+    │   │   │   ├── ResumeExtractor.java# 拼 prompt → 调 AI → 用 JsonExtractor 解析 → 校验
+    │   │   │   ├── JsonExtractor.java # 模型输出 JSON 修复：剥 code fence、删尾逗号、定位
+    │   │   │   │                      #   首个合法 JSON 块、再交给 Jackson
+    │   │   │   ├── Prompts.java       # system / user prompt 模板集中处
+    │   │   │   └── RegexUtil.java     # 兜底用的正则工具（邮箱/电话等）
+    │   │   │
+    │   │   └── util/                  # 杂项工具
+    │   │       └── OutputWriter.java # 把对象写 stdout 或 -o 指定文件，stdout 严格 JSON
+    │   │
+    │   └── resources/
+    │       └── logback.xml            # 日志配置：日志走 stderr，stdout 留给 JSON
+    │
     └── test/java/com/aiparse/cli/
-        ├── MainCliTest.java
-        ├── service/{JsonExtractor,MockAiService,PdfService}Test.java
-        └── tools/SampleResumeGen.java
+        ├── MainCliTest.java           # picocli 装配 + --help 冒烟测试
+        ├── config/
+        │   └── EnvConfigTest.java     # .env 解析器单元测试（注释/引号/缺失文件…）
+        ├── service/
+        │   ├── JsonExtractorTest.java # JSON 修复逻辑测试
+        │   ├── MockAiServiceTest.java # mock 抽取/评分回归
+        │   └── PdfServiceTest.java    # PDF 解析错误码路径测试
+        └── tools/
+            └── SampleResumeGen.java   # 工具：重新生成 samples/resume.pdf（mvn exec:java 调它）
 ```
+
+### 模块依赖关系（数据/控制流）
+
+```
+   ┌────────────────────────────────────────────────────────────┐
+   │  cli/command/         Parse / Extract / Score (picocli)    │
+   └──────────┬─────────────────────┬──────────────────────┬────┘
+              │                     │                      │
+              ▼                     ▼                      ▼
+        PdfService           ResumeExtractor           (ScoreCommand)
+   (读 PDF → 文本)            │                            │
+                              ▼                            ▼
+                       AiService  ◄────────────  MockAiService
+                       (真实 Qwen)              (--mock / 无 Key 时)
+                              │
+                              ▼
+                       JsonExtractor  ──►  model.Resume / ScoreResult
+                       (容错 JSON 解析)              │
+                                                    ▼
+                                            util.OutputWriter
+                                            (stdout / -o file)
+```
+
+读源码的推荐路径：**Main → BaseCommand → 一个具体 Command（如 ExtractCommand）→ 它用到的 Service → 对应的 Model**。`config/EnvConfig` 与 `service/RegexUtil` 是横向工具，理解主流程可先跳过。
