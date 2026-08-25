@@ -99,7 +99,7 @@ ls target/resume-cli.jar
 
 如果已经构建成功，可直接把 `target/resume-cli.jar` 拷走使用，无需 Maven。
 
-项目根目录自带启动脚本 `resume-cli`（POSIX）和 `resume-cli.cmd`（Windows），构建后可直接：
+项目根目录自带启动脚本 `resume-cli`（POSIX）和 `resume-cli.cmd`（Windows），构建后可直接调用：
 
 ```bash
 # Linux / macOS / Git Bash
@@ -107,6 +107,36 @@ ls target/resume-cli.jar
 
 # Windows PowerShell / cmd
 .\resume-cli.cmd parse samples\resume.pdf
+```
+
+#### 启动脚本说明
+
+两个脚本做的事情是一样的：定位 `target/resume-cli.jar`、找一个 JDK 17+、然后 `java -jar` 跑起来。
+
+| 脚本 | 适用平台 | JDK 查找顺序 |
+| --- | --- | --- |
+| `resume-cli` | Linux / macOS / Git Bash | 1) `$JAVA_HOME` → 2) `/usr/lib/jvm`、`/opt/java` 等常见目录 → 3) PATH 上的 `java` |
+| `resume-cli.cmd` | Windows PowerShell / cmd | 1) `%JAVA_HOME%` → 2) `C:\Program Files\Java`、`Eclipse Adoptium` 等 → 3) PATH 上的 `java` |
+
+Windows 脚本实际上是两层：`resume-cli.cmd` → `resume-cli.ps1`，目的是在 PowerShell 没在 PATH 时也能用。
+
+常见用法：
+
+```powershell
+# 提取 + 写文件
+.\resume-cli.cmd extract samples\resume.pdf -o result.json
+
+# 用 --mock 离线演示
+.\resume-cli.cmd score --mock samples\resume.pdf --jd samples\jd.txt
+
+# 显式指定 API Key
+.\resume-cli.cmd extract --api-key sk-xxxx samples\resume.pdf
+
+# 切换到备用模型
+.\resume-cli.cmd score --model qwen-turbo samples\resume.pdf --jd samples\jd.txt
+
+# 打开 DEBUG 日志
+.\resume-cli.cmd extract -v samples\resume.pdf
 ```
 
 需要全局使用 `resume-cli` 命令时，把 `resume-cli` / `resume-cli.cmd` 与 `target/resume-cli.jar` 一起放到 PATH 上的目录即可。
@@ -150,8 +180,8 @@ Commands:
 ```bash
 java -jar target/resume-cli.jar parse samples/resume.pdf
 # 或
-./resume-cli parse samples/resume.pdf         # POSIX
-.\resume-cli.cmd parse samples\resume.pdf     # Windows
+./resume-cli parse samples/resume.pdf             # Linux / macOS / Git Bash
+.\resume-cli.cmd parse samples\resume.pdf         # Windows PowerShell / cmd
 ```
 
 输出形如：
@@ -175,10 +205,15 @@ java -jar target/resume-cli.jar parse samples/resume.pdf
 
 ```bash
 # 真实调用 Qwen
-QWEN_API_KEY=sk-xxx java -jar target/resume-cli.jar extract samples/resume.pdf
+java -jar target/resume-cli.jar extract samples/resume.pdf
+
+# 或使用启动脚本（推荐，Windows 上会按需切换 JDK 17+）
+./resume-cli extract samples/resume.pdf                # Linux / macOS / Git Bash
+.\resume-cli.cmd extract samples\resume.pdf            # Windows PowerShell / cmd
 
 # 离线演示
 java -jar target/resume-cli.jar extract --mock samples/resume.pdf
+.\resume-cli.cmd extract --mock samples\resume.pdf     # Windows 同理
 ```
 
 输出 JSON Schema：
@@ -207,6 +242,12 @@ java -jar target/resume-cli.jar extract --mock samples/resume.pdf
 
 ```bash
 java -jar target/resume-cli.jar score samples/resume.pdf --jd samples/jd.txt
+
+# Windows 推荐用启动脚本（自动切换 JDK 17+，无需手动设置 JAVA_HOME）
+.\resume-cli.cmd score samples\resume.pdf --jd samples\jd.txt
+
+# 离线演示
+.\resume-cli.cmd score --mock samples\resume.pdf --jd samples\jd.txt
 ```
 
 输出示例：
@@ -251,21 +292,26 @@ java -jar target/resume-cli.jar extract --mock samples/resume.pdf -o result.json
 # 3. 与 JD 评分（mock 模式）
 java -jar target/resume-cli.jar score --mock samples/resume.pdf \
      --jd samples/jd.txt -o score.json
+
+# Windows 上用启动脚本更省心（无需先 cd 到项目根目录、也无需 mvn）
+.\resume-cli.cmd parse  samples\resume.pdf
+.\resume-cli.cmd extract --mock samples\resume.pdf -o result.json
+.\resume-cli.cmd score   --mock samples\resume.pdf --jd samples\jd.txt -o score.json
 ```
 
 ## 已实现功能
 
-- [x] `parse / extract / score` 三条主命令
-- [x] picocli 自动生成 `--help`、参数校验、错误信息
-- [x] PDF 解析（PDFBox）+ 错误分类（不存在 / 非 PDF / 不可读 / 空）
-- [x] 真实 Qwen（DashScope OpenAI 兼容接口）调用
-- [x] AI 返回 JSON 的自动修复（剥离 code fence、删尾逗号、定位首个 JSON 块）
-- [x] Resume / Score 字段 schema 校验
-- [x] `--mock` 离线模式（无 API Key 也能演示）
-- [x] `-o / --output` 将结果写入 JSON 文件
-- [x] SLF4J + Logback 日志输出到 stderr
-- [x] Dockerfile + Makefile
-- [x] JUnit 5 单元测试（12 用例，覆盖 PDF / JSON 修复 / Mock 评分 / CLI 帮助）
+- `parse / extract / score` 三条主命令
+- picocli 自动生成 `--help`、参数校验、错误信息
+- PDF 解析（PDFBox）+ 错误分类（不存在 / 非 PDF / 不可读 / 空）
+- 真实 Qwen（DashScope OpenAI 兼容接口）调用
+- AI 返回 JSON 的自动修复（剥离 code fence、删尾逗号、定位首个 JSON 块）
+- Resume / Score 字段 schema 校验
+- `--mock` 离线模式（无 API Key 也能演示）
+- `-o / --output` 将结果写入 JSON 文件
+- SLF4J + Logback 日志输出到 stderr
+- Dockerfile + Makefile
+- JUnit 5 单元测试（12 用例，覆盖 PDF / JSON 修复 / Mock 评分 / CLI 帮助）
 
 ## 开发与测试
 
