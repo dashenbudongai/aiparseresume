@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# POSIX launcher for resume-cli (Linux / macOS / Git Bash).
+#
+# Usage:
+#   ./resume-cli parse samples/resume.pdf
+#
+# Or symlink this file to a directory on PATH (e.g. /usr/local/bin/resume-cli)
+# together with target/resume-cli.jar.
+#
+# JDK resolution order:
+#   1. JAVA_HOME env var (if it points to JDK 17+)
+#   2. Highest-version JDK found under common install dirs
+#   3. `java` on PATH (last resort, may be too old)
+
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+MIN_VER=17
+
+JAR=""
+for candidate in \
+    "$SCRIPT_DIR/target/resume-cli.jar" \
+    "$SCRIPT_DIR/resume-cli.jar" \
+    "$SCRIPT_DIR/../target/resume-cli.jar"; do
+    if [ -f "$candidate" ]; then
+        JAR="$candidate"
+        break
+    fi
+done
+if [ -z "$JAR" ]; then
+    echo "[resume-cli] Cannot find target/resume-cli.jar. Please run 'mvn -DskipTests package' first." >&2
+    exit 1
+fi
+
+# major >= MIN_VER ?
+ge_min() {
+    [ "$1" -ge "$MIN_VER" ] 2>/dev/null
+}
+
+# major version of a JDK at $1
+jdk_major() {
+    "$1/bin/java" -XshowSettings:properties -version 2>&1 \
+        | awk -F'[= ]+' '/java\.version/ {print $3; exit}' \
+        | cut -d. -f1
+}
+
+# 1) JAVA_HOME
+JAVA=""
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    ver=$(jdk_major "$JAVA_HOME")
+    if ge_min "$ver"; then
+        JAVA="$JAVA_HOME/bin/java"
+    fi
+fi
+
+# 2) Auto-discover common JDK install dirs
+if [ -z "$JAVA" ]; then
+    for base in \
+        /usr/lib/jvm \
+        /opt/java \
+        /opt/jdk \
+        /Library/Java/JavaVirtualMachines \
+        "$HOME/.sdkman/candidates/java/current" \
+        "C:/Program Files/Java" \
+        "C:/Program Files/Eclipse Adoptium" \
+        "C:/Program Files/Amazon Corretto" \
+        "C:/Program Files/Microsoft" \
+        "C:/Program Files/Zulu"; do
+        [ -d "$base" ] || continue
+        for d in "$base"/*; do
+            [ -x "$d/bin/java" ] || continue
+            ver=$(jdk_major "$d" 2>/dev/null || echo 0)
+            ge_min "$ver" || continue
+            # take the highest one seen so far
+            if [ -z "$JAVA" ] || [ "$ver" -gt "$BEST_VER" ]; then
+                JAVA="$d/bin/java"
+                BEST_VER="$ver"
+            fi
+        done
+    done
+fi
+
+# 3) Fall back to java on PATH
+if [ -z "$JAVA" ] && command -v java >/dev/null 2>&1; then
+    JAVA="java"
+    echo "[resume-cli] WARNING: JAVA_HOME not set and no JDK ${MIN_VER}+ found; using PATH java. May fail if older than JDK ${MIN_VER}." >&2
+fi
+
+if [ -z "$JAVA" ]; then
+    echo "[resume-cli] Cannot find any java. Please install JDK ${MIN_VER}+ or set JAVA_HOME." >&2
+    exit 1
+fi
+
+exec "$JAVA" -jar "$JAR" "$@"

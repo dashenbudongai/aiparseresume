@@ -1,0 +1,12 @@
+target/
+*.class
+*.log
+out.json
+out2.json
+score.json
+result.json
+.env
+.idea/
+.vscode/
+*.iml
+.DS_Store

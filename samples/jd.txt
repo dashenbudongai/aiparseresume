@@ -1,0 +1,13 @@
+岗位名称：高级全栈工程师
+
+岗位职责：
+1. 负责基于 Java / Spring Boot 的后端服务设计与开发；
+2. 使用 React 或 Vue 构建响应式前端页面；
+3. 将大模型 API（Qwen、OpenAI 等）集成到产品中；
+4. 在 AWS / Kubernetes 环境下进行服务部署与运维。
+
+任职要求：
+- 3 年以上 Java 后端开发经验；
+- 熟悉 MySQL、Redis、Kafka 等常用中间件；
+- 具备 Docker、Kubernetes 实际使用经验；
+- 有调用 LLM / OpenAI / Qwen API 的实际经验者优先。
